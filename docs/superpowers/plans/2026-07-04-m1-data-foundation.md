@@ -1309,3 +1309,26 @@ Expected: all tests pass (config 2, client 3, cohort 2, loader 1, clean 3, resam
 - **Spec coverage:** §5 Data (client + cohort + cleaning + resample + split) ✓; §9 Reproducibility (config-driven, seeded split, DVC) ✓; §3 core "VitalDB ETL + cohort" ✓; §11 Testing (unit tests per stage) ✓. MLflow (§9) belongs to M2 (training) — intentionally out of M1 scope.
 - **Deferred deliberately:** feature engineering beyond cleaning/alignment (§7 `features/`) begins in M2 alongside the response model, where feature choices depend on the modeling target. M1 stops at an analysis-ready aligned dataset.
 - **Type consistency:** friendly track keys (`bis, propofol_rate, remifentanil_rate, map, hr, spo2, etco2`) are identical across `config.py`, `loader.py`, `clean.py`, `builder.py`, and the pipeline CLI.
+
+## Carry-over to M2 (from M1 final review + smoke-run EDA)
+
+The M1 dataset is analysis-ready but a 5-case smoke run surfaced two data-quality
+issues that M2 must handle before modeling. They are **not** M1 defects — M1's job is
+a clean, aligned, versioned dataset — but they materially affect the response model.
+
+1. **BIS artifact zeros.** `clean.VALID_RANGES["bis"] = (0.0, 100.0)`, so sensor-
+   disconnect/artifact `BIS == 0` values pass through as legitimate depth (smoke run:
+   BIS mean ≈ 36, p5 = 0, only 26% of time in target [40, 60]). Worse,
+   `resample.trim_to_valid_window` anchors the case window on `BIS.notna()`, and `0`
+   is not NaN, so artifact zeros can define window boundaries. **M2 action:** raise the
+   BIS lower clamp to a physiologic floor (~10–20) and/or filter on the BIS signal-
+   quality index (`BIS/SQI` track exists in VitalDB), then re-derive the window.
+
+2. **MAP whole-case missingness.** Cases can have `Solar8000/ART_MBP` present but sparse
+   or all-NaN in the trimmed window (smoke run: MAP nan% ≈ 21.6% after imputation, which
+   correctly leaves all-NaN columns as NaN). The `Solar8000/NIBP_MBP` fallback (5763
+   cases) is documented but not wired in. **M2 action:** implement the NIBP fallback for
+   MAP, or explicitly flag/drop MAP-sparse cases before they reach the model.
+
+Both are captured as tests-of-record where cheap (`test_impute_leaves_all_nan_physiologic_as_nan`
+pins the all-NaN behavior) so a future change is a conscious one.
