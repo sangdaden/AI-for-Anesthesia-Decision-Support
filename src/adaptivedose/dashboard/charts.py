@@ -35,6 +35,8 @@ def distribution_figure(values: pd.Series, title: str) -> go.Figure:
 def compare_bis_figure(frames: Dict[int, pd.DataFrame]) -> go.Figure:
     fig = go.Figure()
     for cid, df in frames.items():
+        if "bis" not in df.columns:
+            continue
         fig.add_trace(go.Scatter(x=df["time_sec"] / 60.0, y=df["bis"],
                                  name=f"case {cid}"))
     fig.add_hrect(y0=40, y1=60, line_width=0, fillcolor="green", opacity=0.08)

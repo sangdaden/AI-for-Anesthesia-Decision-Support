@@ -3,6 +3,7 @@
 Run: .venv/bin/streamlit run apps/dashboard/app.py
 """
 import streamlit as st
+from adaptivedose.config import load_data_config
 from adaptivedose.dashboard import data_access as da
 from adaptivedose.dashboard import stats
 from apps.dashboard.views import cohort, case, quality, compare
@@ -11,10 +12,12 @@ st.set_page_config(page_title="AdaptiveDose M1 Explorer", layout="wide")
 
 @st.cache_data
 def _load_context():
+    cfg = load_data_config("configs/data.yaml")
     cohort_df = da.build_cohort_table()
     return {
         "cohort": cohort_df,
         "summary": stats.cohort_summary(cohort_df),
+        "interval_sec": cfg.resample.interval_sec,
     }
 
 @st.cache_data

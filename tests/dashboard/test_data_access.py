@@ -58,3 +58,19 @@ def test_build_cohort_table_joins_clinical_and_split_and_keeps_only_kept(tmp_pat
     assert row1["age"] == 50
     row2 = cohort[cohort["caseid"] == 2].iloc[0]
     assert row2["split"] == "val"
+
+def test_build_cohort_table_missing_clinical_row_leaves_nan_and_unassigned_split(tmp_path):
+    proc = tmp_path / "processed"
+    (proc / "cases").mkdir(parents=True)
+    pd.DataFrame({"caseid": [1], "n_samples": [100], "kept": [True]}
+                 ).to_parquet(proc / "manifest.parquet", index=False)
+    (proc / "splits.json").write_text(json.dumps({"train": [], "val": [], "test": []}))
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    # clinical has no row for caseid 1
+    pd.DataFrame({"caseid": [99], "age": [40], "sex": ["M"], "asa": [1],
+                  "optype": ["X"]}).to_parquet(cache / "cases.parquet", index=False)
+    cohort = da.build_cohort_table(proc, cache)
+    row = cohort[cohort["caseid"] == 1].iloc[0]
+    assert row["split"] == "unassigned"   # not in any split
+    assert pd.isna(row["age"])            # left join, no clinical match

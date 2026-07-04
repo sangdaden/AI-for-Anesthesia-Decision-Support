@@ -43,3 +43,20 @@ def test_missingness_reports_fraction_per_column():
 def test_signal_distribution_concatenates_values():
     vals = stats.signal_distribution([_case(), _case()], "bis")
     assert len(vals) == 10
+
+def test_missingness_absent_column_reports_full():
+    m = stats.missingness([_case()], ["bis", "etco2"])  # etco2 not in _case()
+    assert m["etco2"] == 1.0
+
+def test_signal_distribution_absent_column_is_empty():
+    vals = stats.signal_distribution([_case()], "etco2")
+    assert len(vals) == 0
+
+def test_pooled_fraction_weights_by_row_count():
+    f_long = pd.DataFrame({"bis": [0.0, 0.0]})   # artifact_rate 1.0, 2 rows
+    f_short = pd.DataFrame({"bis": [45.0]})       # artifact_rate 0.0, 1 row
+    # pooled = (1.0*2 + 0.0*1) / 3
+    assert abs(stats.pooled_fraction([f_long, f_short], stats.artifact_rate) - 2 / 3) < 1e-9
+
+def test_pooled_fraction_empty_returns_zero():
+    assert stats.pooled_fraction([], stats.artifact_rate) == 0.0

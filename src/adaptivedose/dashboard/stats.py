@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List
+from typing import Callable, Dict, List
 import pandas as pd
 
 def cohort_summary(cohort: pd.DataFrame) -> Dict:
@@ -38,3 +38,17 @@ def signal_distribution(case_frames: List[pd.DataFrame], col: str) -> pd.Series:
     if not present:
         return pd.Series(dtype=float)
     return pd.concat(present, ignore_index=True).dropna()
+
+def pooled_fraction(
+    case_frames: List[pd.DataFrame],
+    per_case_fn: Callable[[pd.DataFrame], float],
+) -> float:
+    """Length-weighted mean of a per-case fraction across the cohort.
+
+    Weighting by row count pools samples correctly rather than averaging
+    per-case rates (which would over-weight short cases).
+    """
+    total = sum(len(f) for f in case_frames)
+    if total == 0:
+        return 0.0
+    return sum(per_case_fn(f) * len(f) for f in case_frames) / total

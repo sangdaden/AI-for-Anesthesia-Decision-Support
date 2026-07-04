@@ -11,7 +11,7 @@ def render_cohort_overview(ctx):
     c2.metric("Train / Val / Test",
               " / ".join(str(summary["split_sizes"].get(k, 0))
                          for k in ("train", "val", "test")))
-    dur = stats.duration_minutes(cohort, interval_sec=10)
+    dur = stats.duration_minutes(cohort, interval_sec=ctx["interval_sec"])
     c3.metric("Median duration (min)", f"{dur.median():.1f}")
 
     st.subheader("Distributions")
