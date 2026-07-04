@@ -1,143 +1,161 @@
 # Adaptive Dosing MVP — Design Spec
 
 Date: 2026-07-05
-Status: Approved (design phase)
+Status: Approved (design phase) — v2, pivoted after data prototyping
 Author: Sang Phan
 
 > Research/demo only. **Not** for clinical use.
 
+## 0. Why this pivoted (recorded honestly)
+
+The first design modeled within-case dose→BIS dynamics (a linear one-step PK/PD model).
+Prototyping on the real M1 cohort showed this is **not identifiable** from observational
+VitalDB data: clinicians already hold BIS in a narrow band, so there is little
+dose-response variation to learn, and a patient's early propofol requirement does not
+predict their later requirement within the same case (train→test correlation ≈ −0.17;
+one-step propofol sensitivity had the wrong sign in ~40% of patients). That is a real
+property of observational maintenance data, not a code defect.
+
+A **covariate-based** framing IS identifiable and demonstrable: predicting each
+patient's propofol maintenance requirement from their characteristics beats a
+one-size-fits-all dose, leave-one-out cross-validated, with clinically correct
+directions (heavier → more, older → less). This spec adopts that framing.
+
 ## 1. Purpose and Claim
 
-Demonstrate that personalized anesthesia dosing works per patient. This is a
-capability MVP, not the full M2 milestone.
+Demonstrate that anesthesia dosing can be personalized per patient. Capability MVP,
+not full M2.
 
-**Claim.** A personalized drug-response model learns each patient's individual
-sensitivity, so that (a) the same state and BIS target produce **different**
-recommended propofol doses across patients, and (b) a controller using each patient's
-own parameters **tracks the BIS target better** than a controller using
-population-average parameters.
+**Claim.** A model personalizes the recommended propofol maintenance requirement from
+patient characteristics (age, weight, BMI, sex), predicting each individual's dose need
+**better than a one-size-fits-all population dose**, validated leave-one-out across
+patients, with clinically sensible coefficient directions.
 
-This extends the research design
-(`docs/superpowers/specs/2026-07-04-adaptive-dose-ai-research-design.md`): it builds
-the M2 response model + controller in a minimal, honest form and proves the adaptation
-value on the M1 VitalDB dataset.
+Prototype result on the 39-case demo cohort: leave-one-out MAE 3.45 (covariate model)
+vs 3.91 (population mean) — a ~12% improvement — with corr(weight)=+0.54, corr(age)=
+−0.38, corr(sex=M)=+0.41, corr(bmi)=+0.33.
 
-## 2. Response Model (per-patient, linear one-step)
+## 2. Target: per-patient propofol maintenance requirement
 
-For each patient, fit a one-step-ahead autoregressive model by least squares on that
-patient's own samples:
+For each case, the requirement is the mean propofol infusion rate during adequate
+anesthesia:
 
 ```
-BIS[t+1] = alpha + beta * BIS[t] + gamma * propofol[t] + delta * remifentanil[t]
+requirement = mean( propofol_rate[t]  for t where 40 <= BIS[t] <= 60 and BIS[t] > 10 )
 ```
 
-- `gamma` is the patient's **propofol sensitivity** (expected negative: more drug ->
-  lower BIS). Variation in `gamma` across patients is the evidence of personalization.
-- `beta` captures depth inertia.
-- Interpretable, fast to fit, robust at the dataset's 10-second cadence.
+The `BIS[t] > 10` floor drops sensor-artifact zeros (a known M1 data issue). A case is
+usable only if it has at least `min_in_band_rows` (default 10) such rows; otherwise it
+is excluded and logged.
 
-The module reports the one-step BIS prediction MAE so model fit is quantified.
+## 3. Model: covariate → requirement (linear)
 
-## 3. Controller (closed-form one-step inverse)
-
-To move BIS toward target `BIS*` at the next step:
+A linear regression predicts requirement from patient covariates:
 
 ```
-propofol* = clip( (BIS* - alpha - beta * BIS[t] - delta * remifentanil[t]) / gamma,
-                  0, propofol_max )
+requirement ~ age + weight + bmi + sex_male + asa
 ```
 
-If `gamma >= 0` (the model did not learn a sensible sensitivity), the patient is
-flagged **non-identifiable** and excluded from the personalized-vs-population
-comparison. No forcing.
+Fit by least squares (`numpy.linalg.lstsq`), no new dependency. Linear is chosen for
+interpretability — the fitted coefficients directly show each covariate's effect
+direction and are reported in the demonstration.
 
-## 4. Demonstration (avoiding circular self-proof)
+## 4. Recommendation (the "controller")
 
-This is the crux that keeps the result defensible.
+The personalized recommended maintenance dose for a patient is simply the model's
+prediction from their covariates:
 
-- Split each case timeline into **train (first 60%)** and **test (last 40%)**.
-- Fit `sim_model` (the patient's "true" dynamics for evaluation) on the **test
-  window** — an independent simulator.
-- Roll two controllers through `sim_model` over the test window:
-  - **personalized** — parameters fit on the patient's **train** window.
-  - **population** — parameters equal to the cohort mean of all patients' train fits.
-- Personalized winning means the patient's early dynamics predict their later dynamics
-  better than the population average does — i.e. personalization has real value, not a
-  same-model artifact.
+```
+recommend_dose(covariates) = model.predict(covariates)
+```
 
-**Three evidence metrics:**
-1. Spread of `gamma` (propofol sensitivity) across the cohort — inter-patient
-   heterogeneity.
-2. At a fixed reference state (`BIS = 70`, target `50`, remifentanil at cohort median),
-   the recommended propofol per patient — spread of recommended dose.
-3. Target-tracking error `mean|BIS - target|` over the test window: personalized vs
-   population, aggregated across the cohort (and time-in-band [40, 60]).
+The population baseline recommendation is the cohort-mean requirement (one dose for
+everyone).
 
-## 5. Architecture (spec structure + logic/UI separation)
+## 5. Demonstration (non-circular, cross-patient)
+
+Leave-one-out cross-validation avoids leakage: for each patient, fit the model on all
+**other** patients and predict theirs.
+
+- **model MAE** = mean |requirement − LOO prediction|.
+- **baseline MAE** = mean |requirement − mean-of-others| (one-size-fits-all).
+- Personalization value = `(baseline_MAE − model_MAE) / baseline_MAE`.
+
+**Three evidence outputs:**
+1. LOO MAE improvement (model beats population baseline) — the core proof.
+2. Fitted coefficients with directions (weight +, age −, …) — clinical plausibility.
+3. Spread of recommended dose across patients (std of predictions) — different patients
+   get different doses.
+
+## 6. Architecture (spec structure + logic/UI separation)
 
 ```
 src/adaptivedose/models/
 ├── __init__.py
-├── response.py     # fit_response(df) -> ResponseParams; predict_next; one-step MAE
-└── controller.py   # recommend_dose(params, bis, target, remifentanil, propofol_max)
+├── requirement.py   # case_requirement(df, ...) -> float | None
+└── personalize.py   # RequirementModel: fit/predict/coefficients; leave_one_out(X, y)
 src/adaptivedose/adaptive/
 ├── __init__.py
-└── demo.py         # train/test split, fit, simulate personalized vs population, metrics
+└── demo.py          # build modeling table (covariates + requirement), run LOO, metrics
+src/adaptivedose/dashboard/
+└── charts.py        # ADD scatter_actual_vs_predicted (tested figure builder)
 apps/dashboard/views/
-└── adaptive.py     # "Adaptive demo" tab (render-only)
-tests/models/
-├── test_response.py
-└── test_controller.py
-tests/adaptive/
-└── test_demo.py
+└── adaptive.py      # "Adaptive demo" tab (render-only)
+tests/models/{test_requirement.py, test_personalize.py}
+tests/adaptive/test_demo.py
 ```
 
-All computation lives in the tested library layer (`models/`, `adaptive/`). The
-Streamlit tab is render-only, consistent with the M1 dashboard pattern. Chart builders
-for the tab go in the existing `src/adaptivedose/dashboard/charts.py` (tested) where a
-reusable figure is warranted; otherwise the tab uses existing builders.
+All computation lives in the tested library layer (`models/`, `adaptive/`, `charts.py`).
+The Streamlit tab is render-only, matching the M1 dashboard pattern.
 
-**Dashboard tab contents:** pick a patient -> show that patient's `gamma` against the
-cohort distribution, the recommended-dose curve, and a personalized-vs-population
-BIS-tracking plot over the test window; plus a cohort-level panel with the three
-evidence metrics from Section 4.
+**Dashboard tab contents:** a cohort panel with the LOO improvement metric, a coefficient
+table (covariate → effect direction), and an actual-vs-predicted scatter; plus a
+per-patient selector showing that patient's covariates, personalized recommended dose vs
+the population dose vs their actual requirement, and where their dose sits in the cohort
+spread.
 
-## 6. Data Flow
+## 7. Data Flow
 
-- Reads M1 outputs via the existing `adaptivedose.dashboard.data_access`
-  (`build_cohort_table`, `load_case`) — no new disk readers, no network.
-- `adaptive/demo.py` consumes per-case DataFrames (columns `bis, propofol_rate,
-  remifentanil_rate, time_sec`) and the cohort list.
+- Covariates come from the clinical cache via `adaptivedose.dashboard.data_access.load_clinical`
+  (columns `age, sex, height, weight, bmi, asa`).
+- Per-case requirement comes from `data_access.load_case` case frames (columns `bis,
+  propofol_rate`).
+- The cohort of cases comes from `data_access.build_cohort_table` (kept cases). No
+  network at runtime.
 
-## 7. Scope (YAGNI) and Honesty
+## 8. Scope (YAGNI) and Honesty
 
-- **Single objective: BIS only.** MAP hemodynamic constraint is deferred to full M2.
-- **Linear one-step model**, not full PK/PD; **one-step inverse**, not multi-step MPC.
-- Three stated limitations carried in the spec and surfaced in the dashboard tab:
-  1. linear surrogate response model (not pharmacological PK/PD),
-  2. model-based evaluation (the simulator is a fitted model, so this demonstrates the
-     value of personalization given the model, not clinical efficacy),
-  3. single objective (BIS), no hemodynamic safety.
+- **Single drug (propofol), single target (BIS band).** Remifentanil, MAP safety, and
+  time-varying dosing are out of scope.
+- **Linear model, cross-sectional** (one requirement per patient) — not within-case
+  closed-loop control.
+- Stated limitations carried in the spec and surfaced in the dashboard tab:
+  1. requirement is a per-case summary, not a moment-to-moment recommendation;
+  2. covariate personalization explains part of the variance, not all (modest but real
+     improvement over population dosing);
+  3. observational data — the model learns clinician behavior conditioned on covariates,
+     validated by cross-patient generalization, not by clinical trial.
 
-## 8. Testing
+## 9. Testing
 
-- `response.fit_response` / `predict_next`: recover known coefficients from synthetic
-  data generated with a fixed `(alpha, beta, gamma, delta)`; MAE near zero on clean
-  synthetic input.
-- `controller.recommend_dose`: closed-form inverse correctness; clipping to
-  `[0, propofol_max]`; non-identifiable (`gamma >= 0`) handling.
-- `adaptive.demo`: train/test split boundaries; personalized beats population on
-  synthetic data where a per-patient signal exists; non-identifiable patients excluded;
-  metric computations correct on small synthetic cohorts.
+- `requirement.case_requirement`: correct in-band mean; excludes BIS==0/<10 artifacts;
+  returns None below `min_in_band_rows`.
+- `personalize.RequirementModel`: `fit` recovers known coefficients on synthetic data;
+  `predict`; `leave_one_out` produces one held-out prediction per row and, on synthetic
+  data with a real covariate signal, beats the mean-of-others baseline.
+- `adaptive.demo`: builds the modeling table from injected case frames + clinical frame;
+  drops cases with no requirement; computes LOO model/baseline MAE and improvement;
+  coefficient signs match the synthetic generator.
+- `charts.scatter_actual_vs_predicted`: returns a figure with one scatter trace plus an
+  identity reference line.
 - Dashboard tab: render-only, exercised via `streamlit.testing.AppTest`.
 
-## 9. Self-Review Notes
+## 10. Self-Review Notes
 
-- **Consistency:** signal column names (`bis, propofol_rate, remifentanil_rate,
-  time_sec`) match M1 case Parquet output and the existing dashboard layer.
-- **Non-circular evaluation:** train-fit controllers evaluated on an independent
-  test-fit simulator (Section 4) — the design's key defensibility point.
-- **Scope:** single implementation plan; single objective; reuses M1 data access and
-  the dashboard pattern. No decomposition needed.
-- **Honesty:** the three limitations are explicit so the MVP reads as a capability
-  demonstration, not a clinical claim.
+- **Identifiability:** the target and evaluation were validated by prototyping on real
+  data before this spec was written (Section 0/1) — the demonstration will show a real,
+  positive, honest effect.
+- **Non-circular:** leave-one-out CV, no patient appears in its own training set.
+- **Consistency:** column names (`bis, propofol_rate`; clinical `age, sex, height,
+  weight, bmi, asa`) match M1 outputs and the existing dashboard data-access layer.
+- **Scope:** single implementation plan; reuses M1 data access and dashboard pattern.
