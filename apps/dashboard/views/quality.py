@@ -26,6 +26,6 @@ def render_signal_quality(ctx, case_frames):
     values = stats.signal_distribution(frames, sig)
     if len(values):
         st.plotly_chart(charts.distribution_figure(values, sig),
-                        use_container_width=True)
+                        width='stretch')
     else:
         st.info(f"No data for {sig}.")

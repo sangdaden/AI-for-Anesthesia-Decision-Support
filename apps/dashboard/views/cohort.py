@@ -19,14 +19,14 @@ def render_cohort_overview(ctx):
     with a:
         if "age" in cohort:
             st.plotly_chart(charts.distribution_figure(cohort["age"].dropna(), "Age"),
-                            use_container_width=True)
+                            width='stretch')
         if "asa" in cohort:
             st.bar_chart(cohort["asa"].value_counts().sort_index())
     with b:
         if "sex" in cohort:
             st.bar_chart(cohort["sex"].value_counts())
         st.plotly_chart(charts.distribution_figure(dur, "Case duration (min)"),
-                        use_container_width=True)
+                        width='stretch')
 
     st.subheader("Cases")
-    st.dataframe(cohort, use_container_width=True)
+    st.dataframe(cohort, width='stretch')

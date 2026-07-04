@@ -13,4 +13,4 @@ def render_case_viewer(ctx):
     m2.metric("Time in BIS target", f"{stats.time_in_target(df) * 100:.0f}%")
     m3.metric("BIS artifact (==0)", f"{stats.artifact_rate(df) * 100:.1f}%")
 
-    st.plotly_chart(charts.case_timeseries_figure(df), use_container_width=True)
+    st.plotly_chart(charts.case_timeseries_figure(df), width='stretch')

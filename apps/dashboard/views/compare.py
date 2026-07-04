@@ -11,4 +11,4 @@ def render_compare(ctx):
         st.info("Select at least two cases to compare.")
         return
     frames = {int(cid): da.load_case(int(cid)) for cid in ids}
-    st.plotly_chart(charts.compare_bis_figure(frames), use_container_width=True)
+    st.plotly_chart(charts.compare_bis_figure(frames), width='stretch')
