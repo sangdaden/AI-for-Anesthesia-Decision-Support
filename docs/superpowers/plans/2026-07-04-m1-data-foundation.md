@@ -690,13 +690,20 @@ git commit -m "feat(data): per-case tidy loader with injectable load_fn"
 - Create: `src/adaptivedose/data/clean.py`
 - Test: `tests/data/test_clean.py`
 
+> **Design note (corrected during execution):** clamping and imputation are two
+> separate responsibilities. Splitting them lets each be tested independently —
+> clamping turns out-of-range values into NaN; imputation fills NaNs. `clean_case_frame`
+> composes both (clamp, then impute), which is what downstream stages call.
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/data/test_clean.py
 import numpy as np
 import pandas as pd
-from adaptivedose.data.clean import clean_case_frame
+from adaptivedose.data.clean import (
+    clamp_out_of_range, impute_case_frame, clean_case_frame,
+)
 
 def _frame(**cols):
     n = len(next(iter(cols.values())))
@@ -704,26 +711,30 @@ def _frame(**cols):
     base.update(cols)
     return pd.DataFrame(base)
 
-def test_clean_clamps_out_of_range_to_nan():
+def test_clamp_sets_out_of_range_to_nan():
     df = _frame(bis=[50, 120, 40], map=[70, -5, 65], propofol_rate=[3, 4, 999])
-    out = clean_case_frame(df)
-    assert np.isnan(out.loc[1, "bis"])          # 120 > 100 -> NaN
-    assert np.isnan(out.loc[1, "map"])          # -5 < 10 -> NaN
-    assert np.isnan(out.loc[2, "propofol_rate"])  # 999 > 200 -> NaN
+    out = clamp_out_of_range(df)
+    assert np.isnan(out.loc[1, "bis"])            # 120 > 100
+    assert np.isnan(out.loc[1, "map"])            # -5 < 10
+    assert np.isnan(out.loc[2, "propofol_rate"])  # 999 > 200
+    assert out.loc[0, "bis"] == 50                # in-range untouched
 
-def test_clean_forward_fills_then_backfills():
+def test_impute_fills_drugs_with_zero_and_physiologic_by_fill():
     df = _frame(bis=[np.nan, 45.0, np.nan], map=[70.0, 71.0, 72.0],
-                propofol_rate=[3.0, 3.0, 3.0])
-    out = clean_case_frame(df)
-    assert out["bis"].iloc[0] == 45.0   # backfilled
-    assert out["bis"].iloc[2] == 45.0   # forward-filled
+                propofol_rate=[np.nan, 3.0, np.nan])
+    out = impute_case_frame(df)
+    assert out["bis"].iloc[0] == 45.0    # bfill
+    assert out["bis"].iloc[2] == 45.0    # ffill
+    assert out["propofol_rate"].iloc[0] == 0.0
+    assert out["propofol_rate"].iloc[2] == 0.0
     assert not out["bis"].isna().any()
 
-def test_clean_drops_all_nan_columns_gracefully():
-    df = _frame(bis=[np.nan, np.nan], map=[70.0, 71.0], propofol_rate=[3.0, 3.0])
+def test_clean_case_frame_clamps_then_imputes():
+    df = _frame(bis=[50, 120, 40], map=[70, -5, 65], propofol_rate=[3, 4, 999])
     out = clean_case_frame(df)
-    # bis stays present but all-NaN; flagged via helper, not dropped here
-    assert "bis" in out.columns
+    assert not out["bis"].isna().any()          # imputed after clamp
+    assert out.loc[1, "bis"] == 50.0            # 120 clamped -> ffilled from index 0
+    assert out.loc[2, "propofol_rate"] == 0.0   # 999 clamped -> imputed to 0
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -748,30 +759,33 @@ VALID_RANGES = {
     "propofol_rate": (0.0, 200.0),
     "remifentanil_rate": (0.0, 200.0),
 }
-
 SIGNAL_COLS = list(VALID_RANGES.keys())
+DRUG_COLS = ("propofol_rate", "remifentanil_rate")
+PHYSIOLOGIC_COLS = ("bis", "map", "hr", "spo2", "etco2")
 
-def clean_case_frame(df: pd.DataFrame) -> pd.DataFrame:
-    """Clamp out-of-range values to NaN, then impute within the case.
-
-    Drug infusion rates are imputed with 0 (no infusion recorded == none given);
-    physiologic signals are forward- then back-filled within the case.
-    """
+def clamp_out_of_range(df: pd.DataFrame) -> pd.DataFrame:
+    """Set physiologically implausible values to NaN. No imputation."""
     out = df.copy()
     for col, (lo, hi) in VALID_RANGES.items():
         if col in out.columns:
-            mask = (out[col] < lo) | (out[col] > hi)
-            out.loc[mask, col] = pd.NA
+            s = pd.to_numeric(out[col], errors="coerce")
+            out[col] = s.where((s >= lo) & (s <= hi))
+    return out
 
-    for col in ("propofol_rate", "remifentanil_rate"):
+def impute_case_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill NaNs: drug rates -> 0.0 (no infusion), physiologic -> ffill then bfill."""
+    out = df.copy()
+    for col in DRUG_COLS:
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
-
-    physiologic = [c for c in ("bis", "map", "hr", "spo2", "etco2") if c in out.columns]
-    for col in physiologic:
-        out[col] = pd.to_numeric(out[col], errors="coerce").ffill().bfill()
-
+    for col in PHYSIOLOGIC_COLS:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce").ffill().bfill()
     return out
+
+def clean_case_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Full cleaning: clamp out-of-range to NaN, then impute."""
+    return impute_case_frame(clamp_out_of_range(df))
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -783,7 +797,7 @@ Expected: 3 passed.
 
 ```bash
 git add src/adaptivedose/data/clean.py tests/data/test_clean.py
-git commit -m "feat(data): physiologic-range cleaning and per-case imputation"
+git commit -m "feat(data): split clamp/impute cleaning with independent tests"
 ```
 
 ---
