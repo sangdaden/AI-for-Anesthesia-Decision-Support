@@ -5,7 +5,7 @@ Run: .venv/bin/streamlit run apps/dashboard/app.py
 import streamlit as st
 from adaptivedose.dashboard import data_access as da
 from adaptivedose.dashboard import stats
-from apps.dashboard.views import cohort, case, quality
+from apps.dashboard.views import cohort, case, quality, compare
 
 st.set_page_config(page_title="AdaptiveDose M1 Explorer", layout="wide")
 
@@ -42,8 +42,8 @@ def main():
         case.render_case_viewer(ctx)
     elif view == "Signal quality / EDA":
         quality.render_signal_quality(ctx, _load_case_frames())
-    else:
-        st.info(f"'{view}' is added in a later task.")
+    elif view == "Compare cases":
+        compare.render_compare(ctx)
 
 if __name__ == "__main__":
     main()
