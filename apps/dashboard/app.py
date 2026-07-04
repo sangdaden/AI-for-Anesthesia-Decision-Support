@@ -5,7 +5,7 @@ Run: .venv/bin/streamlit run apps/dashboard/app.py
 import streamlit as st
 from adaptivedose.dashboard import data_access as da
 from adaptivedose.dashboard import stats
-from apps.dashboard.views import cohort
+from apps.dashboard.views import cohort, case
 
 st.set_page_config(page_title="AdaptiveDose M1 Explorer", layout="wide")
 
@@ -33,6 +33,8 @@ def main():
     )
     if view == "Cohort overview":
         cohort.render_cohort_overview(ctx)
+    elif view == "Case viewer":
+        case.render_case_viewer(ctx)
     else:
         st.info(f"'{view}' is added in a later task.")
 
