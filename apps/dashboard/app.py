@@ -2,6 +2,18 @@
 
 Run: .venv/bin/streamlit run apps/dashboard/app.py
 """
+import os
+import sys
+from pathlib import Path
+
+# Make the dashboard runnable from any working directory. `streamlit run` puts the
+# script's own directory on sys.path (not the repo root), and the app reads relative
+# paths like `configs/data.yaml` and `data/processed`. Pin both to the repo root.
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+os.chdir(_ROOT)
+
 import streamlit as st
 from adaptivedose.config import load_data_config
 from adaptivedose.dashboard import data_access as da
