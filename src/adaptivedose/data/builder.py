@@ -47,6 +47,8 @@ def build_dataset(
     the manifest via a 'kept' flag.
     """
     out_dir = ensure_dir(Path(output_dir) / "cases")
+    for stale in out_dir.glob("case_*.parquet"):  # avoid manifest<->cases drift
+        stale.unlink()
     frames, rows = {}, []
     for caseid in caseids:
         df = build_case(caseid, tracks, interval_sec, load_fn=load_fn)

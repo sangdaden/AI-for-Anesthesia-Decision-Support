@@ -52,3 +52,16 @@ def test_build_dataset_skips_cases_below_min_samples(tmp_path):
     assert not bool(manifest.iloc[0]["kept"])
     assert not (tmp_path / "cases" / "case_7.parquet").exists()
     assert (tmp_path / "manifest.parquet").exists()
+
+
+def test_build_dataset_clears_stale_case_files(fake_load_case, tmp_path):
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir(parents=True)
+    stale = cases_dir / "case_999.parquet"
+    stale.write_text("stale")  # orphan from a previous, larger run
+    tracks = {"bis": "BIS/BIS", "propofol_rate": "Orchestra/PPF20_RATE",
+              "map": "Solar8000/ART_MBP"}
+    build_dataset([1], tracks, interval_sec=10, output_dir=tmp_path,
+                  load_fn=fake_load_case, min_samples=5)
+    assert not stale.exists()                       # orphan removed
+    assert (cases_dir / "case_1.parquet").exists()  # fresh case written
