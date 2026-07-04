@@ -1,0 +1,21 @@
+cohort:
+  required_tracks: ["BIS/BIS", "Orchestra/PPF20_RATE", "Solar8000/ART_MBP"]
+  min_asa: 1
+  max_asa: 4
+  ane_type: "General"
+tracks:
+  bis: "BIS/BIS"
+  propofol_rate: "Orchestra/PPF20_RATE"
+  remifentanil_rate: "Orchestra/RFTN20_RATE"
+  map: "Solar8000/ART_MBP"
+  hr: "Solar8000/HR"
+  spo2: "Solar8000/PLETH_SPO2"
+  etco2: "Solar8000/ETCO2"
+resample:
+  interval_sec: 10
+split:
+  test_frac: 0.15
+  val_frac: 0.15
+  seed: 42
+cache_dir: ".vitaldb_cache"
+output_dir: "data/processed"
