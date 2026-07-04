@@ -10,7 +10,6 @@ VALID_RANGES = {
     "propofol_rate": (0.0, 200.0),
     "remifentanil_rate": (0.0, 200.0),
 }
-SIGNAL_COLS = list(VALID_RANGES.keys())
 DRUG_COLS = ("propofol_rate", "remifentanil_rate")
 PHYSIOLOGIC_COLS = ("bis", "map", "hr", "spo2", "etco2")
 

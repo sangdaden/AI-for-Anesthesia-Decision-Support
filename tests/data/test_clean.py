@@ -38,3 +38,13 @@ def test_clean_case_frame_clamps_then_imputes():
     assert not out["bis"].isna().any()          # imputed after clamp
     assert out.loc[1, "bis"] == 50.0            # 120 clamped -> ffilled from index 0
     assert out.loc[2, "propofol_rate"] == 0.0   # 999 clamped -> imputed to 0
+
+
+def test_impute_leaves_all_nan_physiologic_as_nan():
+    # Whole-case gap in a physiologic signal (e.g. missing arterial line) has
+    # nothing to fill from, so it must stay NaN rather than crash. This pins the
+    # observed MAP-missingness behavior for downstream stages.
+    df = _frame(bis=[40.0, 41.0, 42.0], map=[np.nan, np.nan, np.nan])
+    out = impute_case_frame(df)
+    assert out["map"].isna().all()
+    assert not out["bis"].isna().any()

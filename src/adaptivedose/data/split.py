@@ -26,6 +26,14 @@ def make_splits(
     n = len(shuffled)
     n_test = int(round(n * test_frac))
     n_val = int(round(n * val_frac))
+    # Guarantee a non-empty training fold whenever at least one group exists.
+    n_test = min(n_test, n)
+    n_val = min(n_val, n - n_test)
+    if n >= 1 and n - n_test - n_val < 1:
+        if n_val > 0:
+            n_val -= 1
+        else:
+            n_test -= 1
     test_g = set(shuffled[:n_test])
     val_g = set(shuffled[n_test:n_test + n_val])
     train_g = set(shuffled[n_test + n_val:])

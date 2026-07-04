@@ -12,6 +12,3 @@ def write_parquet(df: pd.DataFrame, path: str | Path) -> Path:
     ensure_dir(p.parent)
     df.to_parquet(p, index=False)
     return p
-
-def read_parquet(path: str | Path) -> pd.DataFrame:
-    return pd.read_parquet(path)

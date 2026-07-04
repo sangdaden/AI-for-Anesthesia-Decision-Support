@@ -38,3 +38,17 @@ def test_make_splits_no_subject_leak():
         for s in sub:
             assert loc.get(s, name) == name
             loc[s] = name
+
+
+def test_make_splits_falls_back_to_caseid_without_subjectid():
+    manifest = pd.DataFrame({"caseid": list(range(20)), "kept": [True] * 20})
+    splits = make_splits(manifest, test_frac=0.25, val_frac=0.25, seed=3)
+    all_ids = set(splits["train"]) | set(splits["val"]) | set(splits["test"])
+    assert all_ids == set(range(20))
+
+
+def test_make_splits_keeps_train_nonempty_for_extreme_fracs():
+    manifest = pd.DataFrame({"caseid": [1, 2, 3],
+                             "subjectid": [1, 2, 3], "kept": [True] * 3})
+    splits = make_splits(manifest, test_frac=0.5, val_frac=0.5, seed=1)
+    assert len(splits["train"]) >= 1

@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import pandas as pd
 from adaptivedose.config import load_data_config
 from adaptivedose.data.vitaldb_client import load_clinical_info, load_track_index
 from adaptivedose.data.cohort import select_cohort

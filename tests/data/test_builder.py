@@ -1,5 +1,6 @@
+import numpy as np
 import pandas as pd
-from adaptivedose.data.builder import build_case, build_manifest
+from adaptivedose.data.builder import build_case, build_manifest, build_dataset
 
 
 def test_build_case_runs_full_per_case_pipeline(fake_load_case):
@@ -23,3 +24,31 @@ def test_build_manifest_summarizes_cases():
     row1 = manifest[manifest["caseid"] == 1].iloc[0]
     assert row1["n_samples"] == 2
     assert row1["duration_sec"] == 10
+
+
+def test_build_dataset_writes_kept_cases_and_manifest(fake_load_case, tmp_path):
+    tracks = {"bis": "BIS/BIS", "propofol_rate": "Orchestra/PPF20_RATE",
+              "map": "Solar8000/ART_MBP"}
+    manifest = build_dataset(
+        [1, 2], tracks, interval_sec=10, output_dir=tmp_path,
+        load_fn=fake_load_case, min_samples=5,
+    )
+    assert manifest["kept"].all()
+    assert (tmp_path / "cases" / "case_1.parquet").exists()
+    assert (tmp_path / "cases" / "case_2.parquet").exists()
+    assert (tmp_path / "manifest.parquet").exists()
+
+
+def test_build_dataset_skips_cases_below_min_samples(tmp_path):
+    tracks = {"bis": "BIS/BIS"}
+
+    def short_loader(caseid, track_strings, interval):
+        return np.array([[45.0], [46.0], [47.0]])  # 3 samples < min
+
+    manifest = build_dataset(
+        [7], tracks, interval_sec=10, output_dir=tmp_path,
+        load_fn=short_loader, min_samples=30,
+    )
+    assert not bool(manifest.iloc[0]["kept"])
+    assert not (tmp_path / "cases" / "case_7.parquet").exists()
+    assert (tmp_path / "manifest.parquet").exists()
