@@ -11,7 +11,9 @@ def case_requirement(
     """Mean propofol infusion rate while anesthesia is adequate (BIS in band).
 
     Rows with BIS at or below `artifact_floor` are treated as sensor artifacts and
-    excluded. Returns None if fewer than `min_in_band_rows` usable rows remain.
+    excluded. With the default band [40, 60] the `>= low` bound already excludes such
+    artifacts, so the floor is a safeguard that only bites when `low` is set below it.
+    Returns None if fewer than `min_in_band_rows` usable rows remain.
     """
     d = df.dropna(subset=["bis", "propofol_rate"])
     in_band = d[(d["bis"] >= low) & (d["bis"] <= high) & (d["bis"] > artifact_floor)]

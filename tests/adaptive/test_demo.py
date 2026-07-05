@@ -47,3 +47,15 @@ def test_run_demo_reports_improvement_and_coefficients():
     assert res["coefficients"]["weight"] > 0
     assert len(res["table"]) == len(table)
     assert "loo_pred" in res["table"].columns
+
+def test_noise_target_does_not_beat_population_baseline():
+    # Control: a target independent of the covariates carries no signal. Leave-one-out
+    # honestly penalizes the extra parameters, so the model must NOT beat the
+    # population-mean baseline. Guards against silent leakage in run_demo's LOO.
+    rng = np.random.default_rng(0)
+    n = 40
+    table = pd.DataFrame({f: rng.normal(size=n) for f in demo.FEATURES})
+    table["caseid"] = range(n)
+    table["requirement"] = rng.normal(size=n)  # pure noise, independent of covariates
+    res = demo.run_demo(table)
+    assert res["model_mae"] >= res["baseline_mae"]
