@@ -27,3 +27,11 @@ def test_compare_bis_figure_one_trace_per_case():
     fig = charts.compare_bis_figure({1: _case(1), 2: _case(2)})
     assert len(fig.data) == 2
     assert {t.name for t in fig.data} == {"case 1", "case 2"}
+
+def test_scatter_actual_vs_predicted_has_points_and_identity():
+    import plotly.graph_objects as go
+    fig = charts.scatter_actual_vs_predicted([1.0, 2.0, 3.0], [1.1, 1.9, 3.2])
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 2
+    assert fig.data[0].mode == "markers"
+    assert fig.data[1].name == "identity"
