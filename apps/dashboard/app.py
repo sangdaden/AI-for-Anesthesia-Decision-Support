@@ -18,7 +18,7 @@ import streamlit as st
 from adaptivedose.config import load_data_config
 from adaptivedose.dashboard import data_access as da
 from adaptivedose.dashboard import stats
-from apps.dashboard.views import cohort, case, quality, compare
+from apps.dashboard.views import cohort, case, quality, compare, adaptive
 
 st.set_page_config(page_title="AdaptiveDose M1 Explorer", layout="wide")
 
@@ -49,7 +49,8 @@ def main():
 
     view = st.sidebar.radio(
         "View",
-        ["Cohort overview", "Case viewer", "Signal quality / EDA", "Compare cases"],
+        ["Cohort overview", "Case viewer", "Signal quality / EDA", "Compare cases",
+         "Adaptive demo"],
     )
     if view == "Cohort overview":
         cohort.render_cohort_overview(ctx)
@@ -59,6 +60,8 @@ def main():
         quality.render_signal_quality(ctx, _load_case_frames())
     elif view == "Compare cases":
         compare.render_compare(ctx)
+    elif view == "Adaptive demo":
+        adaptive.render_adaptive_demo(ctx)
 
 if __name__ == "__main__":
     main()
